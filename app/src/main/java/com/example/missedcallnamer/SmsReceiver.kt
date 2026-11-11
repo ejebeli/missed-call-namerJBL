@@ -11,6 +11,7 @@ import android.os.Build
 import android.provider.ContactsContract
 import android.telephony.SmsMessage
 import androidx.core.app.NotificationCompat
+import java.util.Locale
 import java.util.regex.Pattern
 
 class SmsReceiver : BroadcastReceiver() {
@@ -33,33 +34,73 @@ class SmsReceiver : BroadcastReceiver() {
             sb.append(sms.displayMessageBody)
         }
 
-        val text = sb.toString()
-        if (text.contains("تماس بی پاسخ") || text.contains("تماس بی‌پاسخ")) {
+        val text = normalizeSmsText(sb.toString())
+        if (looksLikeMissedCall(text)) {
             processMissedCall(context, text)
         }
     }
 
-    private fun processMissedCall(context: Context, text: String) {
-        val pattern = Pattern.compile(
-            "(\\d+)\\s+تماس بی\\s*پاسخ از\\s+(?:\\+98|0)?(9\\d{9})\\s+در زمان\\s+([\\d\\-\\:\\s]+?)\\s+دارید",
-            Pattern.CASE_INSENSITIVE
-        )
-        val matcher = pattern.matcher(text)
+    private fun looksLikeMissedCall(text: String): Boolean {
+        val lower = text.lowercase(Locale.getDefault())
+        return lower.contains("تماس") &&
+            (lower.contains("بی پاسخ") || lower.contains("بی‌پاسخ") || lower.contains("بی پاسخ از") || lower.contains("بی‌پاسخ از"))
+    }
 
-        if (matcher.find()) {
-            val count = matcher.group(1) ?: "1"
-            val fullPhone = "0${matcher.group(2)}"
-            val time = matcher.group(3)?.trim() ?: ""
-            val name = getContactName(context, fullPhone) ?: fullPhone
-            showNotification(context, name, fullPhone, count, time)
-        } else {
-            val fallback = Pattern.compile("(?:\\+98|0)?(9\\d{9})").matcher(text)
-            if (fallback.find()) {
-                val fullPhone = "0${fallback.group(1)}"
-                val name = getContactName(context, fullPhone) ?: fullPhone
-                showNotification(context, name, fullPhone, "1", "")
+    private fun normalizeSmsText(raw: String): String {
+        return raw
+            .replace("\u200C", "") // zero-width non-joiner
+            .replace("\u200D", "") // zero-width joiner
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun processMissedCall(context: Context, text: String) {
+        val patterns = listOf(
+            Pattern.compile(
+                "(\\d+)\\s*تماس\\s*بی\\s*پاسخ\\s*از\\s*(?:\\+98|0)?(9\\d{9})\\s*(?:در\\s*زمان\\s*|در\\s*|زمان\\s*)([\\d\\-\\:\\s]+?)(?:\\s+دارید|\\s*$)",
+                Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                "(\\d+)\\s*تماس\\s*بی\\s*پاسخ\\s*از\\s*(?:\\+98|0)?(9\\d{9})",
+                Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                "(?:\\+98|0)?(9\\d{9})",
+                Pattern.CASE_INSENSITIVE
+            )
+        )
+
+        for (pattern in patterns) {
+            val matcher = pattern.matcher(text)
+            if (matcher.find()) {
+                val count = matcher.groupCount() >= 1 && matcher.group(1) != null
+                    ? matcher.group(1)
+                    : "1"
+
+                val fullPhone = when {
+                    matcher.groupCount() >= 2 && matcher.group(2) != null -> "0${matcher.group(2)}"
+                    matcher.groupCount() >= 1 && matcher.group(1) != null && matchesPhoneNumber(matcher.group(1)) -> "0${matcher.group(1)}"
+                    else -> null
+                }
+
+                if (fullPhone != null) {
+                    val time = if (matcher.groupCount() >= 3 && matcher.group(3) != null) {
+                        matcher.group(3)?.trim() ?: ""
+                    } else {
+                        ""
+                    }
+
+                    val name = getContactName(context, fullPhone) ?: fullPhone
+                    showNotification(context, name, fullPhone, count, time)
+                    return
+                }
             }
         }
+    }
+
+    private fun matchesPhoneNumber(value: String?): Boolean {
+        if (value == null) return false
+        return value.matches(Regex("(?:\\+98|0)?9\\d{9}"))
     }
 
     private fun getContactName(context: Context, phoneNumber: String): String? {
@@ -103,8 +144,13 @@ class SmsReceiver : BroadcastReceiver() {
             nm.createNotificationChannel(channel)
         }
 
-        val details = if (time.isNotEmpty()) "$count تماس بی‌پاسخ • زمان: $time" else "$count تماس بی‌پاسخ"
-      val notif = NotificationCompat.Builder(context, channelId)
+        val details = if (time.isNotEmpty()) {
+            "$count تماس بی‌پاسخ • زمان: $time"
+        } else {
+            "$count تماس بی‌پاسخ"
+        }
+
+        val notif = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.stat_notify_missed_call)
             .setContentTitle("تماس بی‌پاسخ از: $name")
             .setContentText(details)
