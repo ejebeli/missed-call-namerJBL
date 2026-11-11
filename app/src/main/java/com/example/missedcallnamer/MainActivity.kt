@@ -53,9 +53,7 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
         if (requestCode == 101) {
-            val denied = permissions.indices.any {
-                grantResults[it] != PackageManager.PERMISSION_GRANTED
-            }
+            val denied = grantResults.any { it != PackageManager.PERMISSION_GRANTED }
 
             if (denied) {
                 Toast.makeText(
