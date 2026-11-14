@@ -2,6 +2,7 @@ package com.example.missedcallnamer
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -103,17 +104,39 @@ class SmsReceiver : BroadcastReceiver() {
             nm.createNotificationChannel(channel)
         }
 
-        val details = "$count تماس بی‌پاسخ | زمان: $time"
+        // ساخت دستور باز کردن شماره‌گیر با شماره تماس فرد هنگام لمس نوتیفیکیشن
+        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+            data = Uri.parse("tel:$number")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val notificationId = System.currentTimeMillis().toInt()
+        val dialPendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            dialIntent,
+            pendingIntentFlags
+        )
+
+        val details = if (time.isNotEmpty()) "$count تماس بی‌پاسخ | زمان: $time" else "$count تماس بی‌پاسخ"
 
         val notif = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.stat_notify_missed_call)
             .setContentTitle("تماس بی‌پاسخ: $name")
             .setContentText(details)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$details\nشماره: $number"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$details\nشماره: $number (برای تماس لمس کنید)"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(dialPendingIntent)
+            .addAction(android.R.drawable.ic_menu_call, "تماس مجدد", dialPendingIntent)
             .setAutoCancel(true)
             .build()
 
-        nm.notify(System.currentTimeMillis().toInt(), notif)
+        nm.notify(notificationId, notif)
     }
 }
