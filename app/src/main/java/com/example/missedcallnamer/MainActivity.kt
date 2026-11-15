@@ -1,4 +1,4 @@
-package com.example.missedcallnamer
+package com.EhsanJebeli.missedcallnamer
 
 import android.Manifest
 import android.content.pm.PackageManager
