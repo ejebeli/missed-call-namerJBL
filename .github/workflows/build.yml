@@ -1,5 +1,6 @@
-name: Ehsan Jebeli
-
+name: Generate Release Keystore
+run-name: |
+        keytool -genkey -v -keystore app/release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias my-key -storepass password123 -keypass password123 -dname "CN=Ehsan Jebeli, OU=Development, O=JBL, L=Tehran, S=Tehran, C=IR"
 on:
   push:
     branches: [ "main" ]
