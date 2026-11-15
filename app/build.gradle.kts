@@ -4,16 +4,17 @@ plugins {
 }
 
 android {
-    namespace = "com.example.missedcallnamer"
+    namespace = "com.EhsanJebeli.missedcallnamer"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.missedcallnamer"
+        applicationId = "com.EhsanJebeli.missedcallnamer"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 4
+        versionName = "1.3"
     }
+
 
     signingConfigs {
         create("release") {
@@ -26,7 +27,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // فعال‌سازی R8 برای کوچک‌سازی و بهینه‌سازی کدها
+            isMinifyEnabled = true
+            // حذف فایل‌ها و منابع گرافیکی بلااستفاده از کتابخانه‌ها
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }
