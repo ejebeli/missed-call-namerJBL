@@ -1,4 +1,4 @@
-package com.example.missedcallnamer
+package com.EhsanJebeli.missedcallnamer
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
