@@ -1,4 +1,4 @@
-package com.EhsanJebeli.missedcallnamer
+package com.yourname.missedcallnamer
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -35,31 +35,57 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val text = sb.toString()
-        if (text.contains("تماس بی پاسخ") || text.contains("تماس بی‌پاسخ")) {
+
+        // تشخیص پیامک تماس از دست رفته برای همراه اول یا ایرانسل
+        val isMci = text.contains("تماس بی پاسخ") || text.contains("تماس بی‌پاسخ")
+        val isIrancell = (text.contains("تعداد") && text.contains("تماس از"))
+
+        if (isMci || isIrancell) {
             processMissedCall(context, text)
         }
     }
 
     private fun processMissedCall(context: Context, text: String) {
-        val pattern = Pattern.compile(
-            "(\\d+)\\s+تماس بی\\s*پاسخ از\\s+(?:\\+98|0)?(9\\d{9})\\s+در زمان\\s+([\\d\\-\\:\\s]+?)\\s+دارید",
+        // ۱. الگوی همراه اول:
+        // "3 تماس بی پاسخ از 09204193208 در زمان 24-07-1405 13:02 دارید"
+        val mciPattern = Pattern.compile(
+            "(\\d+)\\s+تماس بی\\s*پاسخ از\\s+(?:\\+98|0)?(9\\d{9})\\s+در زمان\\s+([\\d\\-\\/\\:\\s]+?)\\s+دارید",
             Pattern.CASE_INSENSITIVE
         )
-        val matcher = pattern.matcher(text)
+        val mciMatcher = mciPattern.matcher(text)
 
-        if (matcher.find()) {
-            val count = matcher.group(1) ?: "1"
-            val fullPhone = "0${matcher.group(2)}"
-            val time = matcher.group(3)?.trim() ?: ""
+        if (mciMatcher.find()) {
+            val count = mciMatcher.group(1) ?: "1"
+            val fullPhone = "0${mciMatcher.group(2)}"
+            val time = mciMatcher.group(3)?.trim() ?: ""
             val name = getContactName(context, fullPhone) ?: fullPhone
             showNotification(context, name, fullPhone, count, time)
-        } else {
-            val fallback = Pattern.compile("(?:\\+98|0)?(9\\d{9})").matcher(text)
-            if (fallback.find()) {
-                val fullPhone = "0${fallback.group(1)}"
-                val name = getContactName(context, fullPhone) ?: fullPhone
-                showNotification(context, name, fullPhone, "1", "")
-            }
+            return
+        }
+
+        // ۲. الگوی ایرانسل:
+        // "شما در تاريخ 25/08/1405 21:04 تعداد 1 تماس از 09127309397 داشته ايد"
+        val irancellPattern = Pattern.compile(
+            "در\\s+تار[یي]خ\\s+([\\d\\/\\-\\:\\s]+?)\\s+تعداد\\s+(\\d+)\\s+تماس\\s+از\\s+(?:\\+98|0)?(9\\d{9})",
+            Pattern.CASE_INSENSITIVE
+        )
+        val irancellMatcher = irancellPattern.matcher(text)
+
+        if (irancellMatcher.find()) {
+            val time = irancellMatcher.group(1)?.trim() ?: ""
+            val count = irancellMatcher.group(2) ?: "1"
+            val fullPhone = "0${irancellMatcher.group(3)}"
+            val name = getContactName(context, fullPhone) ?: fullPhone
+            showNotification(context, name, fullPhone, count, time)
+            return
+        }
+
+        // ۳. حالت رزرو (Fallback): اگر ساختار جمله کمی تغییر کرد، شماره موبایل را پیدا کند
+        val fallback = Pattern.compile("(?:\\+98|0)?(9\\d{9})").matcher(text)
+        if (fallback.find()) {
+            val fullPhone = "0${fallback.group(1)}"
+            val name = getContactName(context, fullPhone) ?: fullPhone
+            showNotification(context, name, fullPhone, "1", "")
         }
     }
 
@@ -104,7 +130,6 @@ class SmsReceiver : BroadcastReceiver() {
             nm.createNotificationChannel(channel)
         }
 
-        // ساخت دستور باز کردن شماره‌گیر با شماره تماس فرد هنگام لمس نوتیفیکیشن
         val dialIntent = Intent(Intent.ACTION_DIAL).apply {
             data = Uri.parse("tel:$number")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
