@@ -16,7 +16,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val tv = TextView(this).apply {
-            text = "برنامه فعال است.\nسازنده و توسعه دهنده: احسان جبلس."
+            text = "برنامه فعال است.\nسازنده و توسعه دهنده: احسان جبلی."
             textSize = 18f
             setPadding(40, 40, 40, 40)
         }
