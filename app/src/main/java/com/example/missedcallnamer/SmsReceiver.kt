@@ -1,4 +1,4 @@
-package com.ehsanjebeli.missedcallnamer
+package com.EhsanJebeli.missedcallnamer
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -36,18 +36,39 @@ class SmsReceiver : BroadcastReceiver() {
 
         val text = sb.toString()
 
-        // تشخیص پیامک تماس از دست رفته برای همراه اول یا ایرانسل
-        val isMci = text.contains("تماس بی پاسخ") || text.contains("تماس بی‌پاسخ")
-        val isIrancell = (text.contains("تعداد") && text.contains("تماس از"))
+        // تشخیص انواع پیامک‌های تماس از دست رفته و در دسترس بودن
+        val isMciMissed = text.contains("تماس بی پاسخ") || text.contains("تماس بی‌پاسخ")
+        val isIrancellMissed = text.contains("تعداد") && text.contains("تماس از")
+        val isAvailable = text.contains("در دسترس می باشد") || text.contains("در دسترس می‌باشد")
 
-        if (isMci || isIrancell) {
-            processMissedCall(context, text)
+        if (isMciMissed || isIrancellMissed || isAvailable) {
+            processSms(context, text, isAvailable)
         }
     }
 
-    private fun processMissedCall(context: Context, text: String) {
-        // ۱. الگوی همراه اول:
-        // "3 تماس بی پاسخ از 09204193208 در زمان 24-07-1405 13:02 دارید"
+    private fun processSms(context: Context, text: String, isAvailable: Boolean) {
+        // ۱. الگوی پیامک «در دسترس بودن شماره» (همراه اول و ایرانسل):
+        // "مشترک گرامی، شماره همراه 09121984453 اکنون در دسترس می باشد."
+        if (isAvailable) {
+            val availPattern = Pattern.compile(
+                "(?:شماره\\s+همراه|شماره)\\s+(?:\\+98|0)?(9\\d{9})\\s+اکنون\\s+در\\s+دسترس",
+                Pattern.CASE_INSENSITIVE
+            )
+            val availMatcher = availPattern.matcher(text)
+            if (availMatcher.find()) {
+                val fullPhone = "0${availMatcher.group(1)}"
+                val name = getContactName(context, fullPhone) ?: fullPhone
+                showNotification(
+                    context = context,
+                    title = "در دسترس شد: $name",
+                    number = fullPhone,
+                    details = "شماره $fullPhone اکنون در دسترس است"
+                )
+                return
+            }
+        }
+
+        // ۲. الگوی تماس بی‌پاسخ همراه اول:
         val mciPattern = Pattern.compile(
             "(\\d+)\\s+تماس بی\\s*پاسخ از\\s+(?:\\+98|0)?(9\\d{9})\\s+در زمان\\s+([\\d\\-\\/\\:\\s]+?)\\s+دارید",
             Pattern.CASE_INSENSITIVE
@@ -59,12 +80,12 @@ class SmsReceiver : BroadcastReceiver() {
             val fullPhone = "0${mciMatcher.group(2)}"
             val time = mciMatcher.group(3)?.trim() ?: ""
             val name = getContactName(context, fullPhone) ?: fullPhone
-            showNotification(context, name, fullPhone, count, time)
+            val details = if (time.isNotEmpty()) "$count تماس بی‌پاسخ | زمان: $time" else "$count تماس بی‌پاسخ"
+            showNotification(context, "تماس بی‌پاسخ: $name", fullPhone, details)
             return
         }
 
-        // ۲. الگوی ایرانسل:
-        // "شما در تاريخ 25/08/1405 21:04 تعداد 1 تماس از 09127309397 داشته ايد"
+        // ۳. الگوی تماس بی‌پاسخ ایرانسل:
         val irancellPattern = Pattern.compile(
             "در\\s+تار[یي]خ\\s+([\\d\\/\\-\\:\\s]+?)\\s+تعداد\\s+(\\d+)\\s+تماس\\s+از\\s+(?:\\+98|0)?(9\\d{9})",
             Pattern.CASE_INSENSITIVE
@@ -76,16 +97,18 @@ class SmsReceiver : BroadcastReceiver() {
             val count = irancellMatcher.group(2) ?: "1"
             val fullPhone = "0${irancellMatcher.group(3)}"
             val name = getContactName(context, fullPhone) ?: fullPhone
-            showNotification(context, name, fullPhone, count, time)
+            val details = if (time.isNotEmpty()) "$count تماس بی‌پاسخ | زمان: $time" else "$count تماس بی‌پاسخ"
+            showNotification(context, "تماس بی‌پاسخ: $name", fullPhone, details)
             return
         }
 
-        // ۳. حالت رزرو (Fallback): اگر ساختار جمله کمی تغییر کرد، شماره موبایل را پیدا کند
+        // ۴. حالت رزرو (Fallback): استخراج شماره موبایل در صورت تغییر جزئی متن اپراتور
         val fallback = Pattern.compile("(?:\\+98|0)?(9\\d{9})").matcher(text)
         if (fallback.find()) {
             val fullPhone = "0${fallback.group(1)}"
             val name = getContactName(context, fullPhone) ?: fullPhone
-            showNotification(context, name, fullPhone, "1", "")
+            val title = if (isAvailable) "در دسترس شد: $name" else "تماس بی‌پاسخ: $name"
+            showNotification(context, title, fullPhone, "شماره: $fullPhone")
         }
     }
 
@@ -113,20 +136,21 @@ class SmsReceiver : BroadcastReceiver() {
 
     private fun showNotification(
         context: Context,
-        name: String,
+        title: String,
         number: String,
-        count: String,
-        time: String
+        details: String
     ) {
-        val channelId = "missed_call_sms"
+        val channelId = "missed_call_sms_v2"
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "تماس‌های بی‌پاسخ",
+                "هشدار تماس و در دسترس بودن",
                 NotificationManager.IMPORTANCE_HIGH
-            )
+            ).apply {
+                enableVibration(true)
+            }
             nm.createNotificationChannel(channel)
         }
 
@@ -149,16 +173,15 @@ class SmsReceiver : BroadcastReceiver() {
             pendingIntentFlags
         )
 
-        val details = if (time.isNotEmpty()) "$count تماس بی‌پاسخ | زمان: $time" else "$count تماس بی‌پاسخ"
-
         val notif = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.stat_notify_missed_call)
-            .setContentTitle("تماس بی‌پاسخ: $name")
+            .setContentTitle(title)
             .setContentText(details)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$details\nشماره: $number (برای تماس لمس کنید)"))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
             .setContentIntent(dialPendingIntent)
-            .addAction(android.R.drawable.ic_menu_call, "تماس مجدد", dialPendingIntent)
+            .addAction(android.R.drawable.ic_menu_call, "تماس", dialPendingIntent)
             .setAutoCancel(true)
             .build()
 
